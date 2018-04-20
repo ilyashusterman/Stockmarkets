@@ -1,25 +1,22 @@
 import sys
 import pandas as pd
-from datetime import datetime, timedelta
 import numpy as np
 import matplotlib.pyplot as plt
-import requests
+
 from sklearn.externals import joblib
 from os.path import isfile
-
 from matplotlib.collections import LineCollection
 from six.moves.urllib.request import urlopen
 from six.moves.urllib.parse import urlencode
 from sklearn import cluster, covariance, manifold
-from sklearn.linear_model import LassoCV
-
-print(__doc__)
 
 API_KEY = 'TAEUOVZJR0FV9KLR'
 ALPHA_URL = 'https://www.alphavantage.co/query'
 
+
 def retry(f, n_attempts=3):
     "Wrapper function to retry function calls in case of exceptions"
+
     def wrapper(*args, **kwargs):
         for i in range(n_attempts):
             try:
@@ -27,6 +24,7 @@ def retry(f, n_attempts=3):
             except Exception:
                 if i == n_attempts - 1:
                     raise
+
     return wrapper
 
 
@@ -34,7 +32,7 @@ def quotes_historical_alphavantage(symbol):
     params = {
         'symbol': symbol,
         'datatype': 'csv',
-        'interval': '60min',
+        'interval': '15min',
         'function': 'TIME_SERIES_INTRADAY',
         'apikey': API_KEY
     }
@@ -52,13 +50,6 @@ def quotes_historical_alphavantage(symbol):
     df = pd.DataFrame(data)
     return df
 
-# #############################################################################
-# Retrieve the data from Internet
-
-# Choose a time period reasonably calm (not too long ago so that we get
-# high-tech firms, and before the 2008 crash)
-# start_date = datetime.now().date()
-# end_date = start_date - timedelta(days=1825)
 
 symbol_dict = {
     'NYSE:TOT': 'Total',
@@ -119,7 +110,6 @@ symbol_dict = {
     'NYSE:DD': 'DuPont de Nemours'
 }
 
-
 symbols, names = np.array(sorted(symbol_dict.items())).T
 
 # retry is used because quotes_historical_google can temporarily fail
@@ -140,8 +130,7 @@ open_prices = np.vstack([q['open'] for q in quotes])
 # The daily variations of the quotes are what carry most information
 variation = close_prices - open_prices
 
-
-# #############################################################################
+# ##########################################################################
 # Learn a graphical structure from the correlations
 filename = 'model.pkl'
 if isfile(filename):
@@ -157,8 +146,7 @@ edge_model.fit(X)
 
 joblib.dump(edge_model, filename)
 
-
-# #############################################################################
+# ###########################################################################
 # Cluster using affinity propagation
 
 _, labels = cluster.affinity_propagation(edge_model.covariance_)
@@ -167,7 +155,7 @@ n_labels = labels.max()
 # for i in range(n_labels + 1):
 #     print('Cluster %i: %s' % ((i + 1), ', '.join(names[labels == i])))
 
-# #############################################################################
+# ###########################################################################
 # Find a low-dimension embedding for visualization: find the best position of
 # the nodes (the stocks) on a 2D plane
 
@@ -179,7 +167,7 @@ node_position_model = manifold.LocallyLinearEmbedding(
 
 embedding = node_position_model.fit_transform(X.T).T
 
-# #############################################################################
+# ############################################################################
 # Visualization
 plt.figure(1, facecolor='w', figsize=(10, 8))
 plt.clf()
@@ -242,8 +230,9 @@ for index, (name, label, (x, y)) in enumerate(
                        alpha=.6))
 
 plt.xlim(embedding[0].min() - .15 * embedding[0].ptp(),
-         embedding[0].max() + .10 * embedding[0].ptp(),)
+         embedding[0].max() + .10 * embedding[0].ptp(), )
 plt.ylim(embedding[1].min() - .03 * embedding[1].ptp(),
          embedding[1].max() + .03 * embedding[1].ptp())
 
+plt.savefig('result.svg')
 plt.show()
