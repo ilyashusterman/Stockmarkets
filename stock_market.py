@@ -4,11 +4,14 @@ from datetime import datetime, timedelta
 import numpy as np
 import matplotlib.pyplot as plt
 import requests
+from sklearn.externals import joblib
+from os.path import isfile
 
 from matplotlib.collections import LineCollection
 from six.moves.urllib.request import urlopen
 from six.moves.urllib.parse import urlencode
 from sklearn import cluster, covariance, manifold
+from sklearn.linear_model import LassoCV
 
 print(__doc__)
 
@@ -41,13 +44,9 @@ def quotes_historical_alphavantage(symbol):
         'names': ['timestamp', 'open', 'high', 'low', 'close', 'volume'],
         'formats': ['object', 'f4', 'f4', 'f4', 'f4', 'f4']
     }
-    try:
-        data = np.genfromtxt(response, delimiter=',', skip_header=1,
-                             dtype=dtype,
-                             missing_values='-', filling_values=-1)
-    except ValueError as e:
-        print(requests.get(url).content)
-        exit(0)
+    data = np.genfromtxt(response, delimiter=',', skip_header=1,
+                         dtype=dtype,
+                         missing_values='-', filling_values=-1)
     # min_date = min(data['timestamp'], default=datetime.min.date())
     # max_date = max(data['timestamp'], default=datetime.max.date())
     df = pd.DataFrame(data)
@@ -58,8 +57,8 @@ def quotes_historical_alphavantage(symbol):
 
 # Choose a time period reasonably calm (not too long ago so that we get
 # high-tech firms, and before the 2008 crash)
-start_date = datetime.now().date()
-end_date = start_date - timedelta(days=1825)
+# start_date = datetime.now().date()
+# end_date = start_date - timedelta(days=1825)
 
 symbol_dict = {
     'NYSE:TOT': 'Total',
@@ -72,7 +71,7 @@ symbol_dict = {
     'NYSE:TWX': 'Time Warner',
     'NASDAQ:CMCSA': 'Comcast',
     'NYSE:CVC': 'Cablevision',
-    'NASDAQ:YHOO': 'Yahoo',
+    # 'NASDAQ:YHOO': 'Yahoo',
     # 'NASDAQ:DELL': 'Dell',
     'NYSE:HPQ': 'HP',
     # 'NASDAQ:AMZN': 'Amazon',
@@ -128,8 +127,12 @@ symbols, names = np.array(sorted(symbol_dict.items())).T
 quotes = []
 
 for symbol in symbols:
-    print('Fetching quote history for %r' % symbol, file=sys.stderr)
-    quotes.append(retry(quotes_historical_alphavantage)(symbol))
+    try:
+        print('Fetching quote history for %r' % symbol, file=sys.stderr)
+        quotes.append(retry(quotes_historical_alphavantage)(symbol))
+    except ValueError as e:
+        print('Passing {} symbol due to unhandeling api'.format(symbol))
+        pass
 
 close_prices = np.vstack([q['close'] for q in quotes])
 open_prices = np.vstack([q['open'] for q in quotes])
@@ -140,7 +143,11 @@ variation = close_prices - open_prices
 
 # #############################################################################
 # Learn a graphical structure from the correlations
-edge_model = covariance.GraphLassoCV()
+filename = 'model.pkl'
+if isfile(filename):
+    edge_model = joblib.load(filename)
+else:
+    edge_model = covariance.GraphLassoCV()
 
 # standardize the time series: using correlations rather than covariance
 # is more efficient for structure recovery
@@ -148,14 +155,17 @@ X = variation.copy().T
 X /= X.std(axis=0)
 edge_model.fit(X)
 
+joblib.dump(edge_model, filename)
+
+
 # #############################################################################
 # Cluster using affinity propagation
 
 _, labels = cluster.affinity_propagation(edge_model.covariance_)
 n_labels = labels.max()
 
-for i in range(n_labels + 1):
-    print('Cluster %i: %s' % ((i + 1), ', '.join(names[labels == i])))
+# for i in range(n_labels + 1):
+#     print('Cluster %i: %s' % ((i + 1), ', '.join(names[labels == i])))
 
 # #############################################################################
 # Find a low-dimension embedding for visualization: find the best position of
